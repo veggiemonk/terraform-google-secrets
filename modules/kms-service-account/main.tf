@@ -36,17 +36,17 @@ resource "google_kms_crypto_key" "key" {
   rotation_period = var.key_rotation_period
 
 
-  lifecycle {
-    #
-    # CryptoKeys cannot be deleted from Google Cloud Platform. 
-    # Destroying a Terraform-managed CryptoKey will remove it 
-    # from state and delete all CryptoKeyVersions, rendering the key unusable, 
-    # but will not delete the resource on the server. 
-    # When Terraform destroys these keys, 
-    # any data previously encrypted with these keys will be irrecoverable!!! 
-    # Hence, let's prevent terraform from destroying those keys
-    prevent_destroy = true
-  }
+//  lifecycle {
+//    #
+//    # CryptoKeys cannot be deleted from Google Cloud Platform.
+//    # Destroying a Terraform-managed CryptoKey will remove it
+//    # from state and delete all CryptoKeyVersions, rendering the key unusable,
+//    # but will not delete the resource on the server.
+//    # When Terraform destroys these keys,
+//    # any data previously encrypted with these keys will be irrecoverable!!!
+//    # Hence, let's prevent terraform from destroying those keys
+//    prevent_destroy = true
+//  }
 }
 
 #------------------------------------------------------------------------------

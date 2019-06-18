@@ -36,6 +36,26 @@ variable "service_account_iam_roles" {
     "roles/monitoring.viewer",
   ]
 }
+
+variable "services" {
+default = [
+  "cloudresourcemanager.googleapis.com", # Cloud Resource Manager API
+  "cloudshell.googleapis.com", # Cloud Shell API
+  "compute.googleapis.com", # Compute Engine API
+  "container.googleapis.com", # Kubernetes Engine API
+  "containerregistry.googleapis.com", # Container Registry API
+  "iam.googleapis.com", # Identity and Access Management (IAM) API
+  "cloudkms.googleapis.com", # Cloud Key Management Service (KMS) API
+  "logging.googleapis.com", # Stackdriver Logging API
+  "oslogin.googleapis.com", # Cloud OS Login API
+  "replicapool.googleapis.com", # Compute Engine Instance Group Manager API
+  "replicapoolupdater.googleapis.com", # Compute Engine Instance Group Updater API
+  "resourceviews.googleapis.com", # Compute Engine Instance Groups API
+  "storage-api.googleapis.com", # Google Cloud Storage JSON API
+  "storage-component.googleapis.com", # Cloud Storage
+]
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # OPTIONAL PARAMETERS
 # These parameters have reasonable defaults.
