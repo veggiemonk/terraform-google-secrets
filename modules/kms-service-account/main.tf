@@ -13,7 +13,7 @@ terraform {
 #
 # This uses a random_id to prevent that from happening.
 resource "random_id" "kms_random" {
-  prefix      = var.kms_key_ring_prefix
+  prefix      = "${var.kms_key_ring_prefix}-"
   byte_length = "8"
 }
 
