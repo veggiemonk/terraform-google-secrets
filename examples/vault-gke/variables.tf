@@ -43,7 +43,7 @@ variable "service_account_iam_roles" {
 
 variable "cluster_name" {
   description = "The name of the Kubernetes cluster."
-  default = "vault-cluster"
+  default     = "vault-cluster"
 
 }
 
@@ -71,7 +71,7 @@ variable "vpc_secondary_cidr_block" {
 # Kubernetes options
 # -----------------------------
 variable "kubernetes_nodes_per_zone" {
-  default = 1
+  default     = 1
   description = "Initial node count"
 }
 variable "kubernetes_nodes_machine_type" {
@@ -99,7 +99,7 @@ EOF
 }
 
 variable "vault_container" {
-  type    = "string"
+  type = "string"
   default = "vault:1.0.1"
 
   description = <<EOF
@@ -119,7 +119,7 @@ EOF
 }
 
 variable "vault_recovery_shares" {
-  type    = "string"
+  type = "string"
   default = "1"
 
   description = <<EOF

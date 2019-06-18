@@ -175,7 +175,7 @@ resource "google_container_node_pool" "node_pool" {
       "https://www.googleapis.com/auth/cloud-platform",
     ]
     # Set metadata on the VM to supply more entropy
-    metadata {
+    metadata = {
       google-compute-enable-virtio-rng = "true"
       disable-legacy-endpoints         = "true"
     }
