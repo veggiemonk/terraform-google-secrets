@@ -1,15 +1,6 @@
-#------------------------------------------------------------------------------
-# GOOGLE PROVIDER
-#------------------------------------------------------------------------------
-
-provider "google" {
-  region  = var.region
-  project = var.project_id
-}
-
-provider "google-beta" {
-  region  = var.region
-  project = var.project_id
+terraform {
+  # This module has been updated with 0.12 syntax, which means it is no longer compatible with any versions below 0.12.
+  required_version = ">= 0.12"
 }
 
 #------------------------------------------------------------------------------
