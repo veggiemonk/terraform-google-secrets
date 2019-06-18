@@ -131,16 +131,16 @@ module "k8s" {
 resource "google_container_node_pool" "node_pool" {
   provider = "google-beta"
 
-  name     = "private-pool"
-  project  = var.project_id
+  name     = "${var.name_prefix}-private-pool"
+  project  = module.project.project_id
   location = var.cluster_location
   cluster  = module.k8s.name
 
-  initial_node_count = "1"
+  initial_node_count = var.kubernetes_nodes_per_zone
 
   autoscaling {
-    min_node_count = "1"
-    max_node_count = "5"
+    min_node_count = var.min_node_count
+    max_node_count = var.max_node_count
   }
 
   management {
@@ -150,17 +150,19 @@ resource "google_container_node_pool" "node_pool" {
 
   node_config {
     image_type   = "COS"
-    machine_type = "n1-standard-1"
+    machine_type = var.kubernetes_nodes_machine_type
 
     labels = {
-      private-pools-example = "true"
+      private-pool = "true"
+      service      = var.name_prefix
     }
 
     # Add a private tag to the instances. See the network access tier table for full details:
     # https://github.com/gruntwork-io/terraform-google-network/tree/master/modules/vpc-network#access-tier
     tags = [
       module.network.private,
-      "private-pool-example",
+      var.name_prefix,
+      "private-pool",
     ]
 
     disk_size_gb = "30"
@@ -172,6 +174,18 @@ resource "google_container_node_pool" "node_pool" {
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
     ]
+    # Set metadata on the VM to supply more entropy
+    metadata {
+      google-compute-enable-virtio-rng = "true"
+      disable-legacy-endpoints         = "true"
+    }
+
+
+    # Protect node metadata
+    workload_metadata_config {
+      node_metadata = "SECURE"
+    }
+
   }
 
   lifecycle {

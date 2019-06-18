@@ -68,6 +68,23 @@ variable "vpc_secondary_cidr_block" {
 
 
 #
+# Kubernetes options
+# -----------------------------
+variable "kubernetes_nodes_per_zone" {
+  default = 1
+  description = "Initial node count"
+}
+variable "kubernetes_nodes_machine_type" {
+  default = "n1-standard-1"
+}
+variable "min_node_count" {
+  default = 1
+}
+variable "max_node_count" {
+  default = 5
+}
+
+#
 # Vault options
 # ------------------------------
 
