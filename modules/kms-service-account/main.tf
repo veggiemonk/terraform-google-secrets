@@ -35,7 +35,7 @@ resource "google_kms_crypto_key" "key" {
   key_ring        = google_kms_key_ring.ring.id
   rotation_period = var.key_rotation_period
 
-
+//
 //  lifecycle {
 //    #
 //    # CryptoKeys cannot be deleted from Google Cloud Platform.

@@ -12,27 +12,29 @@ provider "google-beta" {
   region  = var.region
 }
 
+
+locals {
+  project_id = var.project_id
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # CREATE SERVICE ACCOUNT IN A PROJECT
 # ---------------------------------------------------------------------------------------------------------------------
-module "project" {
-  source = "../../../terraform-google-project/modules/gcp-project-service-account"
-  //  source = "github.com/veggiemonk/terraform-google-project//modules/gcp-project-service-account"
 
-  project_id                = var.project_id
-  service_account_name      = "${var.name_prefix} Server"
-  service_account_id        = "${var.name_prefix}-server"
-  service_account_iam_roles = var.service_account_iam_roles
+module "service_account" {
+  source = "../../modules/service-account-key"
 
-//  services = var.services
+  project_id           = local.project_id
+  service_account_id   = "${var.name_prefix}-server"
+  service_account_name = "${var.name_prefix} Server"
 }
-
 # Use a random suffix to prevent overlap in network names
 resource "random_string" "suffix" {
   length  = 4
   special = false
   upper   = false
 }
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # CREATE NETWORK
@@ -41,7 +43,7 @@ module "network" {
   source = "github.com/gruntwork-io/terraform-google-network//modules/vpc-network"
 
   name_prefix = "${var.cluster_name}-network-${random_string.suffix.result}"
-  project     = module.project.project_id
+  project     = local.project_id
   region      = var.region
 
 
@@ -54,8 +56,8 @@ module "network" {
 # ---------------------------------------------------------------------------------------------------------------------
 module "storage" {
   source                = "github.com/veggiemonk/terraform-google-bucket//modules/storage-versioned-service-account"
-  project_id            = module.project.project_id
-  service_account_email = module.project.service_account_email
+  project_id            = local.project_id
+  service_account_email = module.service_account.service_account_email
 
   bucket_prefix = var.name_prefix
   location      = var.storage_location
@@ -67,8 +69,8 @@ module "storage" {
 module "encryption" {
   source = "../../modules/kms-service-account"
 
-  project_id            = module.project.project_id
-  service_account_email = module.project.service_account_email
+  project_id            = local.project_id
+  service_account_email = module.service_account.service_account_email
 
   region              = var.cluster_location
   kms_key_ring_prefix = var.name_prefix
@@ -82,22 +84,27 @@ module "bastion" {
   source = "github.com/gruntwork-io/terraform-google-network//modules/bastion-host"
 
   zone       = var.bastion_zone
-  project    = module.project.project_id
+  project    = local.project_id
   subnetwork = module.network.public_subnetwork
 
   instance_name = "${var.name_prefix}-bastion"
   source_image  = "debian-cloud/debian-9"
 }
 
+data "google_compute_instance" "bastion" {
+  self_link = module.bastion.instance
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # DEPLOY A PRIVATE GKE CLUSTER
 # ---------------------------------------------------------------------------------------------------------------------
 module "k8s" {
-  source = "github.com/gruntwork-io/terraform-google-gke//modules/gke-cluster"
+  source = "../../../terraform-google-gke/modules/gke-cluster"
+  //  source = "github.com/gruntwork-io/terraform-google-gke//modules/gke-cluster"
 
   name     = var.cluster_name
   location = var.cluster_location
-  project  = module.project.project_id
+  project  = var.project_id
 
   network = module.network.network
   # See the network access tier table for full details:
@@ -110,12 +117,14 @@ module "k8s" {
 
   master_authorized_networks_config = [{
     cidr_blocks = [{
-      cidr_block   = "${module.bastion.address}/32"
+      //      cidr_block   = var.vpc_cidr_block
+      //      cidr_block   = module.network.private_subnetwork_cidr_block
+      cidr_block   = "${data.google_compute_instance.bastion.network_interface[0].network_ip}/32"
       display_name = "${var.name_prefix}-bastion-vm"
     }],
   }]
 
-  cluster_secondary_range_name = module.network.public_subnetwork_secondary_range_name
+  cluster_secondary_range_name = module.network.private_subnetwork_secondary_range_name
 
 
   # This setting will make the cluster private
@@ -134,7 +143,7 @@ resource "google_container_node_pool" "node_pool" {
   provider = "google-beta"
 
   name     = "${var.name_prefix}-private-pool"
-  project  = module.project.project_id
+  project  = local.project_id
   location = var.cluster_location
   cluster  = module.k8s.name
 
@@ -171,7 +180,7 @@ resource "google_container_node_pool" "node_pool" {
     disk_type    = "pd-standard"
     preemptible  = false
 
-    service_account = "${module.project.service_account_email}"
+    service_account = module.service_account.service_account_email
 
     oauth_scopes = [
       "https://www.googleapis.com/auth/cloud-platform",
@@ -205,9 +214,9 @@ resource "google_container_node_pool" "node_pool" {
 resource "google_compute_address" "vault" {
   name    = "vault-lb"
   region  = var.region
-  project = module.project.project_id
+  project = local.project_id
 
-  depends_on = [module.project]
+  depends_on = [module.k8s]
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -301,31 +310,31 @@ resource "tls_locally_signed_cert" "vault" {
 
 # Query the client configuration for our current service account, which shoudl
 # have permission to talk to the GKE cluster since it created it.
-data "google_client_config" "current" {}
-
-# This file contains all the interactions with Kubernetes
-provider "kubernetes" {
-  load_config_file = false
-  host             = module.k8s.endpoint
-
-  cluster_ca_certificate = base64decode(module.k8s.cluster_ca_certificate)
-  token                  = data.google_client_config.current.access_token
-}
-
-# Write the secret
-resource "kubernetes_secret" "vault-tls" {
-  metadata {
-    name = "vault-tls"
-  }
-
-  data = {
-    "vault.crt" = "${tls_locally_signed_cert.vault.cert_pem}\n${tls_self_signed_cert.vault-ca.cert_pem}"
-    "vault.key" = tls_private_key.vault.private_key_pem
-    "ca.crt"    = tls_self_signed_cert.vault-ca.cert_pem
-  }
-
-  depends_on = [module.k8s]
-}
+//data "google_client_config" "current" {}
+//
+//# This file contains all the interactions with Kubernetes
+//provider "kubernetes" {
+//  load_config_file = false
+//  host             = module.k8s.endpoint
+//
+//  cluster_ca_certificate = module.k8s.cluster_ca_certificate
+//  token                  = data.google_client_config.current.access_token
+//}
+//
+//# Write the secret
+//resource "kubernetes_secret" "vault-tls" {
+//  metadata {
+//    name = "vault-tls"
+//  }
+//
+//  data = {
+//    "vault.crt" = "${tls_locally_signed_cert.vault.cert_pem}\n${tls_self_signed_cert.vault-ca.cert_pem}"
+//    "vault.key" = tls_private_key.vault.private_key_pem
+//    "ca.crt"    = tls_self_signed_cert.vault-ca.cert_pem
+//  }
+//
+//  depends_on = [module.k8s]
+//}
 
 # Render the YAML file
 
@@ -347,69 +356,82 @@ data "template_file" "vault" {
     kms_crypto_key = module.encryption.crypto_key_name
 
     gcs_bucket_name = module.storage.bucket_name
+
+    vault_crt = base64encode("${tls_locally_signed_cert.vault.cert_pem}\n${tls_self_signed_cert.vault-ca.cert_pem}")
+    vault_key = base64encode(tls_private_key.vault.private_key_pem)
+    ca_crt    = base64encode(tls_self_signed_cert.vault-ca.cert_pem)
   }
+
+}
+
+resource "null_resource" "render" {
+  triggers {
+    vault_crt = base64encode("${tls_locally_signed_cert.vault.cert_pem}\n${tls_self_signed_cert.vault-ca.cert_pem}")
+    vault_key = base64encode(tls_private_key.vault.private_key_pem)
+    ca_crt    = base64encode(tls_self_signed_cert.vault-ca.cert_pem)
+  }
+
+  depends_on = [data.template_file.vault]
 }
 
 # Submit the job - Terraform doesn't yet support StatefulSets, so we have to
 # shell out.
-resource "null_resource" "apply" {
-  triggers = {
-    host                   = md5(module.k8s.endpoint)
-    client_certificate     = md5(module.k8s.client_certificate)
-    client_key             = md5(module.k8s.client_key)
-    cluster_ca_certificate = md5(module.k8s.cluster_ca_certificate)
-  }
-
-  depends_on = [
-    "kubernetes_secret.vault-tls",
-  ]
-
-  provisioner "local-exec" {
-    command = <<EOF
-gcloud container clusters get-credentials "${module.k8s.name}" --region="${var.region}" --project="${module.project.project_id}"
-
-CONTEXT="gke_${module.project.project_id}_${var.region}_${module.k8s.name}"
-echo '${data.template_file.vault.rendered}' | kubectl apply --context="$CONTEXT" -f -
-EOF
-  }
-}
+//resource "null_resource" "apply" {
+//  triggers = {
+//    host                   = md5(module.k8s.endpoint)
+//    client_certificate     = md5(module.k8s.client_certificate)
+//    client_key             = md5(module.k8s.client_key)
+//    cluster_ca_certificate = md5(module.k8s.cluster_ca_certificate)
+//  }
+//
+//  depends_on = [kubernetes_secret.vault-tls]
+//
+//  provisioner "local-exec" {
+//    command = <<EOF
+//gcloud container clusters get-credentials "${module.k8s.name}" --region="${var.region}" --project="${local.project_id}"
+//
+//CONTEXT="gke_${local.project_id}_${var.region}_${module.k8s.name}"
+//echo '${data.template_file.vault.rendered}' | kubectl apply --context="$CONTEXT" -f -
+//EOF
+//  }
+//}
 
 # Wait for all the servers to be ready
-resource "null_resource" "wait-for-finish" {
-  provisioner "local-exec" {
-    command = <<EOF
-for i in $(seq -s " " 1 15); do
-  sleep $i
-  if [ $(kubectl get pod | grep vault | wc -l) -eq ${var.num_vault_pods} ]; then
-    exit 0
-  fi
-done
+//resource "null_resource" "wait-for-finish" {
+//  provisioner "local-exec" {
+//    command = <<EOF
+//for i in $(seq -s " " 1 15); do
+//  sleep $i
+//  if [ $(kubectl get pod | grep vault | wc -l) -eq ${var.num_vault_pods} ]; then
+//    exit 0
+//  fi
+//done
+//
+//echo "Pods are not ready after 2m"
+//exit 1
+//EOF
+//  }
+//
+//  depends_on = [null_resource.apply]
+//}
 
-echo "Pods are not ready after 2m"
-exit 1
-EOF
-  }
-
-  depends_on = ["null_resource.apply"]
-}
-
-# Build the URL for the keys on GCS
-data "google_storage_object_signed_url" "keys" {
-  bucket = module.storage.bucket_name
-  path   = "root-token.enc"
-
-  credentials = base64decode(module.project.service_account_private_key)
-
-  depends_on = ["null_resource.wait-for-finish"]
-}
-
-# Download the encrypted recovery unseal keys and initial root token from GCS
-data "http" "keys" {
-  url = data.google_storage_object_signed_url.keys.signed_url
-}
-
-# Decrypt the values
-data "google_kms_secret" "keys" {
-  crypto_key = module.encryption.crypto_key_id
-  ciphertext = data.http.keys.body
-}
+//# Build the URL for the keys on GCS
+//data "google_storage_object_signed_url" "keys" {
+//  bucket = module.storage.bucket_name
+//  path   = "root-token.enc"
+//
+//  credentials = base64decode(module.service_account.service_account_private_key)
+//
+////  depends_on = [null_resource.wait-for-finish]
+//}
+//
+//# Download the encrypted recovery unseal keys and initial root token from GCS
+//data "http" "keys" {
+//  url = data.google_storage_object_signed_url.keys.signed_url
+//}
+//
+//# Decrypt the values
+//data "google_kms_secret" "keys" {
+//  crypto_key = module.encryption.crypto_key_id
+//  ciphertext = data.http.keys.body
+//}

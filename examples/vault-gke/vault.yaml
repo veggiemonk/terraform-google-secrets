@@ -18,6 +18,16 @@ spec:
     protocol: TCP
 
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-tls
+data:
+  vault.crt : ${vault_crt}
+  vault.key : ${vault_key}
+  ca.crt    : ${ca_crt}
+
+---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
