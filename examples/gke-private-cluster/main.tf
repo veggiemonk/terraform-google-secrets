@@ -24,6 +24,7 @@ provider "google-beta" {
   project = var.project
   region  = var.region
 }
+resource "null_resource" "example" {}
 
 variable "instance_name" {
   default = "bastion"
